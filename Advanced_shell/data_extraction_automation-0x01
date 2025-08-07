@@ -1,18 +1,5 @@
 #!/bin/bash
-
-# Extract raw data using jq
-jq -r '.name, .height, .weight, .types[0].type.name' data.json | \
-# Process with awk and sed
-awk '
-NR==1 {name=$0}
-NR==2 {height=$0/10}
-NR==3 {weight=$0/10}
-NR==4 {
-  type=toupper(substr($0,1,1)) tolower(substr($0,2))
-  printf "%s is of type %s, weighs ", name, type
-  printf (weight == int(weight) ? "%dkg" : "%.1fkg", weight
-  printf ", and is "
-  printf (height == int(height)) ? "%dm" : "%.1fm", height
-  printf " tall.\n"
-}' | \
-sed 's/\.0\(kg\|m\)/\1/g'
+jq -r '
+  . as $poke |
+  "\(.name) is of type \(.types[0].type.name), weighs \(.weight)kg, and is \(.height)m tall."
+' pikachu.json | sed -E 's/(^| )([a-z])/\1\u\2/g' | awk '{printf "%s\n", $0}'
