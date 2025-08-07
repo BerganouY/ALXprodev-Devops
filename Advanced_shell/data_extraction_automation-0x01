@@ -1,5 +1,6 @@
 #!/bin/bash
-jq -r '
-  . as $poke |
-  "\(.name) is of type \(.types[0].type.name), weighs \(.weight)kg, and is \(.height)m tall."
-' pikachu.json | sed -E 's/(^| )([a-z])/\1\u\2/g' | awk '{printf "%s\n", $0}'
+name=$(jq -r '.name' pikachu.json | sed 's/.*/\u&/')
+type=$(jq -r '.types[0].type.name' pikachu.json | sed 's/.*/\u&/')
+formatted_weight=$(jq '.weight' pikachu.json | awk '{printf "%.0f", $1}')
+formatted_height=$(jq '.height' pikachu.json | awk '{printf "%.1f", $1 / 10}')
+echo "$name is of type $type, weighs ${formatted_weight}kg, and is ${formatted_height}m tall."
