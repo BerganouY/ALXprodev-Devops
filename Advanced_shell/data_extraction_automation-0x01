@@ -1,19 +1,6 @@
 #!/bin/bash
 
-# Extract and format data using only jq, awk, and sed
 jq -r '
-  "\(.name) is of type \(.types[0].type.name), weighs \(.weight/10)kg, and is \(.height/10)m tall."
-' data.json |
-awk '{
-  # Capitalize first letter of type
-  split($5, type, "");
-  type[1] = toupper(type[1]);
-  $5 = "";
-  for (i in type) $5 = $5 type[i];
-
-  # Remove trailing .0 from weight and height
-  gsub(/\.0kg/, "kg");
-  gsub(/\.0m/, "m");
-  print;
-}' |
-sed 's/, weighs 6kg/, weighs 6kg/; s/, and is 0.4m tall/, and is 0.4m tall/'
+  (.types[0].type.name | ascii_upcase[:1] + .[1:]) as $type |
+  "Pikachu is of type \($type), weighs \(.weight/10 | tostring | sub("\\.0$";""))kg, and is \(.height/10 | tostring | sub("\\.0$";""))m tall."
+' data.json
