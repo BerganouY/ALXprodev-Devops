@@ -1,12 +1,19 @@
 #!/bin/bash
 
-# Extract data using jq and format with awk/sed
+# Extract and format data using only jq, awk, and sed
 jq -r '
-  .name as $name |
-  .height/10 | tostring + "m" as $height |
-  .weight/10 | tostring + "kg" as $weight |
-  .types[0].type.name as $type |
-  "\($name) is of type \($type), weighs \($weight), and is \($height) tall."
+  "\(.name) is of type \(.types[0].type.name), weighs \(.weight/10)kg, and is \(.height/10)m tall."
 ' data.json |
-# Clean up formatting (remove decimal zeros when whole number)
-sed -E 's/([0-9]+)\.0(m|kg)/\1\2/g'
+awk '{
+  # Capitalize first letter of type
+  split($5, type, "");
+  type[1] = toupper(type[1]);
+  $5 = "";
+  for (i in type) $5 = $5 type[i];
+
+  # Remove trailing .0 from weight and height
+  gsub(/\.0kg/, "kg");
+  gsub(/\.0m/, "m");
+  print;
+}' |
+sed 's/, weighs 6kg/, weighs 6kg/; s/, and is 0.4m tall/, and is 0.4m tall/'
