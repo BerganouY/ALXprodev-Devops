@@ -1,36 +1,19 @@
 #!/bin/bash
 
-# Output CSV file
-output_file="pokemon_report.csv"
+# Write CSV header
+echo "Name,Height (m),Weight (kg)" > pokemon_report.csv
 
-# Initialize CSV header
-echo "Name,Height (m),Weight (kg)" > "$output_file"
+# Loop over all JSON files
+for file in *.json
+do
+  name=$(jq -r '.name' "$file")
+  height=$(jq '.height' "$file" | awk '{printf "%.2f", $1 / 10}')
+  weight=$(jq '.weight' "$file" | awk '{printf "%.2f", $1 / 10}')
+  echo "$name,$height,$weight" >> pokemon_report.csv
+done
 
-# Process files and collect data for averages
-{
-  for file in pokemon_data/*.json; do
-    jq -r '[
-      (.name | (.[:1] | ascii_upcase) + .[1:]),
-      (.height/10 | tostring),
-      (.weight/10 | tostring)
-    ] | join(",")' "$file"
-  done
-} >> "$output_file"
+# Print confirmation
+echo "CSV Report generated at: pokemon_report.csv"
 
-# Calculate averages using awk
-awk -F, '
-NR == 1 { next }  # Skip header
-{
-  height_sum += $2
-  weight_sum += $3
-  count++
-}
-END {
-  printf "\nAverage Height: %.2f m\n", height_sum/count
-  printf "Average Weight: %.2f kg\n", weight_sum/count
-}
-' "$output_file"
-
-# Display completion message
-echo "CSV Report generated at: $output_file"
-cat "$output_file"
+# Print average height and weight using awk (skip header)
+awk -F, 'NR>1 {h+=$2; w+=$3; c++} END {printf "\nAverage Height: %.2f m\nAverage Weight: %.2f kg\n", h/c, w/c}' pokemon_report.csv
