@@ -3,89 +3,76 @@
 # List of Pokémon to fetch
 pokemon_list=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
 
-# Create output directory if it doesn't exist
+# Create output directory
 mkdir -p pokemon_data
 
-# Base API URL
+# API configuration
 api_url="https://pokeapi.co/api/v2/pokemon"
-
-# Maximum parallel processes
 max_parallel=3
+delay_between_batches=1
 
-# Delay between batch starts (in seconds)
-batch_delay=1
-
-# Log file for errors
+# Error handling
 error_log="pokemon_data/parallel_errors.log"
-
-# Initialize error log
-echo "Parallel Pokémon Fetch Error Log - $(date)" > "$error_log"
+echo "Parallel Fetch Log - $(date)" > "$error_log"
 
 # Function to fetch a single Pokémon
 fetch_pokemon() {
     local pokemon=$1
+    local attempts=3
     local attempt=1
-    local max_attempts=3
     local success=false
 
-    while [ $attempt -le $max_attempts ] && [ "$success" = false ]; do
-        echo "Fetching $pokemon (attempt $attempt)..."
-
-        # Make the API request with timeout
-        response=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "$api_url/$pokemon")
-
-        if [ "$response" -eq 200 ]; then
-            curl -s "$api_url/$pokemon" > "pokemon_data/$pokemon.json"
-
-            # Validate JSON
-            if jq empty "pokemon_data/$pokemon.json" 2>/dev/null; then
-                echo "Successfully fetched $pokemon"
-                success=true
+    while [ $attempt -le $attempts ] && [ "$success" = false ]; do
+        if response=$(curl -s -w "%{http_code}" -o "pokemon_data/${pokemon}.json" --connect-timeout 10 "$api_url/$pokemon" 2>/dev/null); then
+            http_code=${response: -3}
+            if [ "$http_code" -eq 200 ]; then
+                if jq -e . "pokemon_data/${pokemon}.json" >/dev/null 2>&1; then
+                    echo "✅ Success: $pokemon"
+                    success=true
+                else
+                    echo "🔄 Invalid JSON: $pokemon (attempt $attempt)" | tee -a "$error_log"
+                    rm -f "pokemon_data/${pokemon}.json"
+                fi
             else
-                echo "Invalid JSON received for $pokemon" | tee -a "$error_log"
-                rm -f "pokemon_data/$pokemon.json"
+                echo "🔄 HTTP $http_code: $pokemon (attempt $attempt)" | tee -a "$error_log"
+                rm -f "pokemon_data/${pokemon}.json"
             fi
         else
-            case $response in
-                404) error_msg="Not found";;
-                429) error_msg="Rate limited";;
-                000) error_msg="Network failure";;
-                *) error_msg="HTTP $response";;
-            esac
-            echo "Failed to fetch $pokemon: $error_msg" | tee -a "$error_log"
+            echo "🔄 Network Error: $pokemon (attempt $attempt)" | tee -a "$error_log"
         fi
 
-        if [ "$success" = false ]; then
-            ((attempt++))
-            sleep 1 # Delay between retries
-        fi
+        [ "$success" = false ] && ((attempt++)) && sleep 1
     done
 
-    if [ "$success" = false ]; then
-        echo "Failed to fetch $pokemon after $max_attempts attempts" | tee -a "$error_log"
-    fi
+    [ "$success" = false ] && echo "❌ Failed: $pokemon after $attempts attempts" | tee -a "$error_log"
 }
 
-# Main processing loop
+# Main execution
 echo "Starting parallel fetch for ${#pokemon_list[@]} Pokémon..."
-current_batch=0
+
+# Use an array to track PIDs
+declare -a pids
+current_parallel=0
 
 for pokemon in "${pokemon_list[@]}"; do
-    # Run fetch in background
     fetch_pokemon "$pokemon" &
+    pids+=($!)
+    ((current_parallel++))
 
-    # Count background processes
-    current_batch=$((current_batch + 1))
-
-    # When we reach max parallel processes, wait for them to complete
-    if [ $current_batch -ge $max_parallel ]; then
-        wait # Wait for all background processes to finish
-        current_batch=0
-        sleep $batch_delay # Delay between batches
+    if [ $current_parallel -ge $max_parallel ]; then
+        # Wait for all current background processes
+        for pid in "${pids[@]}"; do
+            wait "$pid" 2>/dev/null
+        done
+        pids=()
+        current_parallel=0
+        sleep $delay_between_batches
     fi
 done
 
-# Wait for any remaining background processes
-wait
+# Wait for any remaining processes
+for pid in "${pids[@]}"; do
+    wait "$pid" 2>/dev/null
+done
 
-echo "Parallel fetch complete. Check $error_log for any errors."
+echo "Parallel fetch complete. Errors logged to $error_log"
