@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# Extract data using jq and format with awk/sed
+jq -r '
+  .name as $name |
+  .height/10 | tostring + "m" as $height |
+  .weight/10 | tostring + "kg" as $weight |
+  .types[0].type.name as $type |
+  "\($name) is of type \($type), weighs \($weight), and is \($height) tall."
+' data.json |
+# Clean up formatting (remove decimal zeros when whole number)
+sed -E 's/([0-9]+)\.0(m|kg)/\1\2/g'
