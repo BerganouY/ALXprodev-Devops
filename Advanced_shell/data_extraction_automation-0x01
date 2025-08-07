@@ -1,6 +1,18 @@
 #!/bin/bash
 
-jq -r '
-  (.types[0].type.name | ascii_upcase[:1] + .[1:]) as $type |
-  "Pikachu is of type \($type), weighs \(.weight/10 | tostring | sub("\\.0$";""))kg, and is \(.height/10 | tostring | sub("\\.0$";""))m tall."
-' data.json
+# Extract raw data using jq
+jq -r '.name, .height, .weight, .types[0].type.name' data.json | \
+# Process with awk and sed
+awk '
+NR==1 {name=$0}
+NR==2 {height=$0/10}
+NR==3 {weight=$0/10}
+NR==4 {
+  type=toupper(substr($0,1,1)) tolower(substr($0,2))
+  printf "%s is of type %s, weighs ", name, type
+  printf (weight == int(weight) ? "%dkg" : "%.1fkg", weight
+  printf ", and is "
+  printf (height == int(height)) ? "%dm" : "%.1fm", height
+  printf " tall.\n"
+}' | \
+sed 's/\.0\(kg\|m\)/\1/g'
