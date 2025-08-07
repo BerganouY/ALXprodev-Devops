@@ -12,20 +12,74 @@ api_url="https://pokeapi.co/api/v2/pokemon"
 # Delay between requests (in seconds) to avoid rate limiting
 delay=2
 
+# Maximum retry attempts
+max_retries=3
+
+# Log file for errors
+error_log="pokemon_data/fetch_errors.log"
+
+# Initialize error log
+echo "Pokémon Fetch Error Log - $(date)" > "$error_log"
+
 for pokemon in "${pokemon_list[@]}"; do
-  echo "Fetching data for $pokemon..."
+    retry_count=0
+    success=false
 
-  # Make the API request
-  response=$(curl -s -o /dev/null -w "%{http_code}" "$api_url/$pokemon")
+    echo "Fetching data for $pokemon..."
 
-  # Check if request was successful
-  if [ "$response" -eq 200 ]; then
-    curl -s "$api_url/$pokemon" > "pokemon_data/$pokemon.json"
-    echo "Saved data to pokemon_data/$pokemon.json ✅"
-  else
-    echo "Failed to fetch data for $pokemon (HTTP $response)"
-  fi
+    while [ $retry_count -lt $max_retries ] && [ "$success" = false ]; do
+        # Make the API request with timeout
+        response=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "$api_url/$pokemon")
 
-  # Add delay between requests
-  sleep $delay
+        if [ "$response" -eq 200 ]; then
+            # Successful response - save data
+            curl -s "$api_url/$pokemon" > "pokemon_data/$pokemon.json"
+
+            # Validate JSON
+            if jq empty "pokemon_data/$pokemon.json" 2>/dev/null; then
+                echo "Saved data to pokemon_data/$pokemon.json ✅"
+                success=true
+            else
+                echo "Invalid JSON received for $pokemon (attempt $((retry_count+1)))" | tee -a "$error_log"
+                rm -f "pokemon_data/$pokemon.json"
+            fi
+        else
+            # Handle different error cases
+            case $response in
+                404)
+                    error_msg="Pokémon not found: $pokemon"
+                    ;;
+                429)
+                    error_msg="Rate limited - too many requests for $pokemon"
+                    ;;
+                000)
+                    error_msg="Network error fetching $pokemon (curl failed)"
+                    ;;
+                *)
+                    error_msg="HTTP $response error fetching $pokemon"
+                    ;;
+            esac
+
+            echo "$error_msg (attempt $((retry_count+1)))" | tee -a "$error_log"
+        fi
+
+        # Increment retry counter if not successful
+        if [ "$success" = false ]; then
+            ((retry_count++))
+            if [ $retry_count -lt $max_retries ]; then
+                echo "Retrying in $delay seconds..."
+                sleep $delay
+            fi
+        fi
+    done
+
+    # Final failure case
+    if [ "$success" = false ]; then
+        echo "Failed to fetch $pokemon after $max_retries attempts" | tee -a "$error_log"
+    fi
+
+    # Delay between Pokémon requests
+    sleep $delay
 done
+
+echo "Batch processing complete. Check $error_log for any errors."
